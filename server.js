@@ -66,8 +66,8 @@ app.post('/api/orders/upload', upload.single('file'), (req, res) => {
     const cNum  = col('number');
     const cDesc = col('desc');
     const cQty  = col('qty');
-    const cUser = header.findIndex(h => h.includes('user') || h.includes('vendor'));
-    const cUom  = col('uom');
+    const cUser = header.findIndex(h => h.includes('vendorm') || h.includes('user'));
+    const cUom  = header.findIndex(h => h.includes('uom'));
 
     const items = [];
     let autoNum = 1;
@@ -77,15 +77,20 @@ app.post('/api/orders/upload', upload.single('file'), (req, res) => {
       const num  = cNum  >= 0 ? row[cNum]  : null;
       const desc = cDesc >= 0 ? row[cDesc] : null;
       const qty  = cQty  >= 0 ? row[cQty]  : null;
-      // Only desc + qty are required; numbering is optional
-      if (!desc || !qty) continue;
+
+      const descStr = desc ? String(desc).trim() : '';
+      const qtyNum  = qty  ? parseFloat(qty) : 0;
+
+      // Only skip rows with no description or zero quantity
+      if (!descStr || qtyNum <= 0) continue;
+
       items.push({
         id:          id++,
-        numbering:   num ? String(num) : ('#' + (autoNum++)),
-        description: String(desc),
-        qty:         Number(qty),
-        user:        cUser >= 0 && row[cUser] ? String(row[cUser]) : '',
-        uom:         cUom  >= 0 && row[cUom]  ? String(row[cUom])  : '',
+        numbering:   num ? String(num).trim() : ('#' + (autoNum++)),
+        description: descStr,
+        qty:         qtyNum,
+        user:        cUser >= 0 && row[cUser] ? String(row[cUser]).trim() : '',
+        uom:         cUom  >= 0 && row[cUom]  ? String(row[cUom]).trim()  : '',
         status:      'pending'
       });
     }
