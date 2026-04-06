@@ -66,8 +66,8 @@ app.post('/api/orders/upload', upload.single('file'), (req, res) => {
     const cNum  = col('number');
     const cDesc = col('desc');
     const cQty  = col('qty');
-    const cUser = header.findIndex(h => h.includes('vendorm') || h.includes('user'));
-    const cUom  = header.findIndex(h => h.includes('uom'));
+    const cUser = header.findIndex(h => h.includes('user') || h.includes('vendor'));
+    const cUom  = col('uom');
 
     const items = [];
     let autoNum = 1;
@@ -77,20 +77,15 @@ app.post('/api/orders/upload', upload.single('file'), (req, res) => {
       const num  = cNum  >= 0 ? row[cNum]  : null;
       const desc = cDesc >= 0 ? row[cDesc] : null;
       const qty  = cQty  >= 0 ? row[cQty]  : null;
-
-      const descStr = desc ? String(desc).trim() : '';
-      const qtyNum  = qty  ? parseFloat(qty) : 0;
-
-      // Only skip rows with no description or zero quantity
-      if (!descStr || qtyNum <= 0) continue;
-
+      // Only desc + qty are required; numbering is optional
+      if (!desc || !qty) continue;
       items.push({
         id:          id++,
-        numbering:   num ? String(num).trim() : ('#' + (autoNum++)),
-        description: descStr,
-        qty:         qtyNum,
-        user:        cUser >= 0 && row[cUser] ? String(row[cUser]).trim() : '',
-        uom:         cUom  >= 0 && row[cUom]  ? String(row[cUom]).trim()  : '',
+        numbering:   num ? String(num) : ('#' + (autoNum++)),
+        description: String(desc),
+        qty:         Number(qty),
+        user:        cUser >= 0 && row[cUser] ? String(row[cUser]) : '',
+        uom:         cUom  >= 0 && row[cUom]  ? String(row[cUom])  : '',
         status:      'pending'
       });
     }
@@ -157,3 +152,68 @@ app.post('/api/reports', (req, res) => {
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
 app.listen(PORT, () => console.log('Backend running on port ' + PORT));
+
+// ─── STOCK API ───────────────────────────────────────────
+const STOCK_FILE = path.join(__dirname, 'stock.json');
+
+function readStock() {
+  if (!fs.existsSync(STOCK_FILE)) return { items: [], updatedAt: null };
+  try { return JSON.parse(fs.readFileSync(STOCK_FILE, 'utf8')); }
+  catch { return { items: [], updatedAt: null }; }
+}
+
+app.get('/api/stock', (req, res) => res.json(readStock()));
+
+app.post('/api/stock/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    if (rows.length < 2) return res.status(400).json({ error: 'No data rows' });
+
+    const header = rows[0].map(h => String(h || '').trim());
+    // Find columns by Chinese name
+    const ci = name => header.findIndex(h => h.includes(name));
+    const cCode     = ci('商品代码');
+    const cUom      = ci('基本UOM');
+    const cName     = ci('名称');
+    const cGroup    = ci('商品组别');
+    const cCat      = ci('商品类别');
+    const cCtrl     = ci('库存控制');
+    const cActive   = ci('活跃');
+    const cQty      = ci('剩余总量');
+
+    const items = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const ctrl   = cCtrl   >= 0 ? String(row[cCtrl]   || '').trim() : '';
+      const active = cActive >= 0 ? String(row[cActive] || '').trim() : '';
+      if (ctrl === 'Unchecked' || active === 'Unchecked') continue;
+
+      const name = cName >= 0 ? String(row[cName] || '').trim() : '';
+      if (!name) continue;
+
+      let qty = 0;
+      try { qty = cQty >= 0 && row[cQty] != null ? parseFloat(row[cQty]) : 0; } catch {}
+
+      items.push({
+        code:     cCode  >= 0 && row[cCode]  ? String(row[cCode]).trim()  : '',
+        uom:      cUom   >= 0 && row[cUom]   ? String(row[cUom]).trim()   : '',
+        name,
+        group:    cGroup >= 0 && row[cGroup] ? String(row[cGroup]).trim() : '其他组别',
+        category: cCat   >= 0 && row[cCat]   ? String(row[cCat]).trim()   : '其他类别',
+        qty
+      });
+    }
+
+    if (!items.length) return res.status(400).json({ error: 'No valid stock rows' });
+
+    const stock = { items, updatedAt: new Date().toLocaleString('zh-CN'), filename: req.file.originalname };
+    fs.writeFileSync(STOCK_FILE, JSON.stringify(stock, null, 2));
+    broadcast('stock_updated', stock);
+    res.json({ ok: true, count: items.length, updatedAt: stock.updatedAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
