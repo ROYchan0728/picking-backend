@@ -11,7 +11,8 @@ const PORT     = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE  = path.join(DATA_DIR, 'data.json');
 const STOCK_FILE = path.join(DATA_DIR, 'stock.json');
-const SUBS_FILE  = path.join(DATA_DIR, 'subscriptions.json');
+const SUBS_FILE     = path.join(DATA_DIR, 'subscriptions.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 // VAPID — set these as env vars in Railway/Docker
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC  || 'BFj1IfOTZtrF8PxkIX83cCKcO9nMlvet7CN1d_zs7_wUgTtJcg5C7B5kjdw5I70D0sFEgSSBOZ5rWoL4P39ouhA';
@@ -57,6 +58,13 @@ function readSubs() {
   catch { return []; }
 }
 function writeSubs(subs) { fs.writeFileSync(SUBS_FILE, JSON.stringify(subs, null, 2)); }
+
+function readSettings() {
+  if (!fs.existsSync(SETTINGS_FILE)) return { stockReminderTime: '08:45', stockReminderEnabled: true, timezone: 'Asia/Singapore' };
+  try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); }
+  catch { return { stockReminderTime: '08:45', stockReminderEnabled: true, timezone: 'Asia/Singapore' }; }
+}
+function writeSettings(s) { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); }
 
 // ─── SSE ─────────────────────────────────────────────────
 const clients = new Set();
@@ -253,5 +261,52 @@ app.post('/api/stock/upload', upload.single('file'), (req, res) => {
 
 // ─── HEALTH ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+// ─── SETTINGS API ─────────────────────────────────────────
+app.get('/api/settings', (req, res) => res.json(readSettings()));
+
+app.post('/api/settings', (req, res) => {
+  const current = readSettings();
+  const updated = Object.assign(current, req.body);
+  writeSettings(updated);
+  res.json({ ok: true, settings: updated });
+});
+
+// ─── STOCK REMINDER SCHEDULER ────────────────────────────
+let lastReminderDate = null;
+
+function checkStockReminder() {
+  const settings = readSettings();
+  if (!settings.stockReminderEnabled) return;
+
+  const tz = settings.timezone || 'Asia/Singapore';
+  const now = new Date();
+
+  // Get current time in target timezone
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    hour: '2-digit', minute: '2-digit',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour12: false
+  }).formatToParts(now);
+
+  const p = {};
+  parts.forEach(({ type, value }) => { p[type] = value; });
+  const currentTime = `${p.hour}:${p.minute}`;
+  const currentDate = `${p.year}-${p.month}-${p.day}`;
+
+  if (currentTime === settings.stockReminderTime && lastReminderDate !== currentDate) {
+    lastReminderDate = currentDate;
+    console.log(`[Reminder] Sending stock reminder at ${currentTime} (${tz})`);
+    pushToAll({
+      title: '📊 库存更新提醒',
+      body: '请记得上传今日最新库存 Excel',
+      type: 'stock_reminder'
+    });
+  }
+}
+
+// Check every minute
+setInterval(checkStockReminder, 60 * 1000);
 
 app.listen(PORT, () => console.log('Backend running on port ' + PORT));
