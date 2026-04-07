@@ -14,8 +14,8 @@ const STOCK_FILE = path.join(DATA_DIR, 'stock.json');
 const SUBS_FILE  = path.join(DATA_DIR, 'subscriptions.json');
 
 // VAPID — set these as env vars in Railway/Docker
-const VAPID_PUBLIC  = process.env.VAPID_PUBLIC  || 'nzqCm7uCIEQcsziq3sF6tQKWCg4jGrQpujWqjRXmWcFOuOHIL74nDCywfbi6Q0_QgwJz5vfDGtoR3Mese48gMQ';
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE || 'IIucFfXy9oYHq6GNvweFbkb6ZJ_sI5JFspZ4zjgmvTg';
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC  || 'BFj1IfOTZtrF8PxkIX83cCKcO9nMlvet7CN1d_zs7_wUgTtJcg5C7B5kjdw5I70D0sFEgSSBOZ5rWoL4P39ouhA';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE || 'JGuk33HorjFeew9zkvZk5Cmlp7utOOKs6Gihr3BbnRM';
 const VAPID_EMAIL   = process.env.VAPID_EMAIL   || 'mailto:admin@picking-app.com';
 
 webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
