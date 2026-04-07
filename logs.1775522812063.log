@@ -1,0 +1,116 @@
+2026-04-07T00:45:57.039951151Z [inf]  Starting Container
+2026-04-07T00:45:57.802787031Z [err]  /app/node_modules/web-push/src/vapid-helper.js:111
+2026-04-07T00:45:57.802793939Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:45:57.802800718Z [err]      ^
+2026-04-07T00:45:57.802807213Z [err]  
+2026-04-07T00:45:57.802814329Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:45:57.802821118Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:45:57.802827809Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:45:57.802834694Z [err]      at Object.<anonymous> (/app/server.js:21:9)
+2026-04-07T00:45:57.802841365Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:45:57.802847823Z [err]      at Object..js (node:internal/modules/cjs/loader:1689:10)
+2026-04-07T00:45:57.802854746Z [err]      at Module.load (node:internal/modules/cjs/loader:1318:32)
+2026-04-07T00:45:57.802860983Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:45:57.802867461Z [err]      at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+2026-04-07T00:45:57.802874189Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:45:57.802880771Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:45:57.802887400Z [err]  
+2026-04-07T00:45:57.803008769Z [err]  Node.js v22.11.0
+2026-04-07T00:45:58.867658981Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:45:58.867669784Z [err]      at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+2026-04-07T00:45:58.867678857Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:45:58.867686188Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:45:58.867693089Z [err]  
+2026-04-07T00:45:58.867700422Z [err]  Node.js v22.11.0
+2026-04-07T00:45:58.867728187Z [err]  /app/node_modules/web-push/src/vapid-helper.js:111
+2026-04-07T00:45:58.867734859Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:45:58.867740941Z [err]      ^
+2026-04-07T00:45:58.867769954Z [err]  
+2026-04-07T00:45:58.867776720Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:45:58.867783216Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:45:58.867789298Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:45:58.867795448Z [err]      at Object.<anonymous> (/app/server.js:21:9)
+2026-04-07T00:45:58.867801536Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:45:58.867813990Z [err]      at Object..js (node:internal/modules/cjs/loader:1689:10)
+2026-04-07T00:45:58.867820912Z [err]      at Module.load (node:internal/modules/cjs/loader:1318:32)
+2026-04-07T00:45:59.806805786Z [err]      ^
+2026-04-07T00:45:59.806815664Z [err]  
+2026-04-07T00:45:59.806821216Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:45:59.806869921Z [err]  /app/node_modules/web-push/src/vapid-helper.js:111
+2026-04-07T00:45:59.806875497Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:45:59.807052034Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:45:59.807064909Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:45:59.807073762Z [err]      at Object.<anonymous> (/app/server.js:21:9)
+2026-04-07T00:45:59.807081690Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:45:59.807088991Z [err]      at Object..js (node:internal/modules/cjs/loader:1689:10)
+2026-04-07T00:45:59.807097503Z [err]      at Module.load (node:internal/modules/cjs/loader:1318:32)
+2026-04-07T00:45:59.807104177Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:45:59.807111159Z [err]      at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+2026-04-07T00:45:59.807117561Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:45:59.807125346Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:45:59.807132760Z [err]  
+2026-04-07T00:45:59.807140635Z [err]  Node.js v22.11.0
+2026-04-07T00:46:00.904332168Z [err]      at Object..js (node:internal/modules/cjs/loader:1689:10)
+2026-04-07T00:46:00.904346999Z [err]      at Module.load (node:internal/modules/cjs/loader:1318:32)
+2026-04-07T00:46:00.904355187Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:46:00.904361409Z [err]      at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+2026-04-07T00:46:00.904368852Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:46:00.904375655Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:46:00.904382297Z [err]  
+2026-04-07T00:46:00.904390229Z [err]  Node.js v22.11.0
+2026-04-07T00:46:00.904397023Z [err]  /app/node_modules/web-push/src/vapid-helper.js:111
+2026-04-07T00:46:00.904403797Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:46:00.904410145Z [err]      ^
+2026-04-07T00:46:00.904417425Z [err]  
+2026-04-07T00:46:00.904425072Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:46:00.904431541Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:46:00.904438852Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:46:00.904448227Z [err]      at Object.<anonymous> (/app/server.js:21:9)
+2026-04-07T00:46:00.904454878Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:46:41.109666955Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:46:41.109673108Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:46:41.109678378Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:46:41.109683990Z [err]      at Object.<anonymous> (/app/server.js:21:9)
+2026-04-07T00:46:41.109689387Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:46:41.109694974Z [err]      at Object..js (node:internal/modules/cjs/loader:1689:10)
+2026-04-07T00:46:41.109700535Z [err]      at Module.load (node:internal/modules/cjs/loader:1318:32)
+2026-04-07T00:46:41.109706747Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:46:41.109712354Z [err]      at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+2026-04-07T00:46:41.109718450Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:46:41.109724651Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:46:41.109736090Z [err]  Node.js v22.11.0
+2026-04-07T00:46:41.109741632Z [err]  /app/node_modules/web-push/src/vapid-helper.js:111
+2026-04-07T00:46:41.109748791Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:46:41.109760378Z [err]  
+2026-04-07T00:46:41.109766434Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:46:41.131717146Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:46:41.131730863Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:46:41.131739567Z [err]      at Object.<anonymous> (/app/server.js:21:9)
+2026-04-07T00:46:41.131828400Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:46:41.131865561Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:46:41.131874118Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:46:41.131882634Z [err]  
+2026-04-07T00:46:41.131891393Z [err]  Node.js v22.11.0
+2026-04-07T00:46:42.083718183Z [err]      ^
+2026-04-07T00:46:42.083727879Z [err]  
+2026-04-07T00:46:42.083735355Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:46:42.083773585Z [err]  /app/node_modules/web-push/src/vapid-helper.js:111
+2026-04-07T00:46:42.083781467Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:46:42.083799685Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:46:42.083809152Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:46:42.083820614Z [err]      at Module._compile (node:internal/modules/cjs/loader:1546:14)
+2026-04-07T00:46:42.083829439Z [err]      at Module.load (node:internal/modules/cjs/loader:1318:32)
+2026-04-07T00:46:42.083834394Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:46:42.083840534Z [err]      at TracingChannel.traceSync (node:diagnostics_channel:315:14)
+2026-04-07T00:46:42.083846299Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:46:42.083854403Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:46:42.083867790Z [err]  Node.js v22.11.0
+2026-04-07T00:46:43.379255559Z [err]      throw new Error('Vapid public key should be 65 bytes long when decoded.');
+2026-04-07T00:46:43.379266976Z [err]  
+2026-04-07T00:46:43.379272431Z [err]  Error: Vapid public key should be 65 bytes long when decoded.
+2026-04-07T00:46:43.379277493Z [err]      at Object.validatePublicKey (/app/node_modules/web-push/src/vapid-helper.js:111:11)
+2026-04-07T00:46:43.379281641Z [err]      at WebPushLib.setVapidDetails (/app/node_modules/web-push/src/web-push-lib.js:60:17)
+2026-04-07T00:46:43.379311166Z [err]      at Function._load (node:internal/modules/cjs/loader:1128:12)
+2026-04-07T00:46:43.379324066Z [err]      at wrapModuleLoad (node:internal/modules/cjs/loader:218:24)
+2026-04-07T00:46:43.379329450Z [err]      at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5)
+2026-04-07T00:46:43.379338236Z [err]  Node.js v22.11.0
