@@ -7,12 +7,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="拣货系统">
 <meta name="theme-color" content="#1D9E75">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&display=swap" rel="stylesheet">
+
 <title>拣货系统</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600&display=swap');
 :root {
   --green:#1D9E75; --green-dark:#085041; --green-light:#E1F5EE; --green-mid:#9FE1CB;
   --red:#A32D2D; --red-light:#FCEBEB; --red-border:#F09595;
@@ -301,6 +301,13 @@ function currentPageId() {
   const a = document.querySelector('.page.active');
   return a ? a.id.replace('page-', '') : 'orders';
 }
+function setTopbarMode(isRoot) {
+  const titleWrap = document.getElementById('topbarTitleWrap');
+  const logo      = document.getElementById('topbarLogo');
+  if (titleWrap) titleWrap.style.display = isRoot ? 'none' : 'block';
+  if (logo)      logo.style.display      = isRoot ? 'flex' : 'none';
+}
+
 function showPage(id, title, sub) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
@@ -309,29 +316,22 @@ function showPage(id, title, sub) {
   if (sub) { subEl.textContent = sub; subEl.style.display = 'block'; }
   else subEl.style.display = 'none';
   document.getElementById('topbarRight').innerHTML = '';
-  // On main tab root pages (no back), hide title text and show only logo
-  const isRoot = S.pageStack.length === 0;
-  const titleWrap = document.getElementById('topbarTitleWrap');
-  const logo = document.getElementById('topbarLogo');
-  if (titleWrap) titleWrap.style.display = isRoot ? 'none' : 'block';
-  if (logo) logo.style.display = isRoot ? 'flex' : 'none';
 }
 function pushPage(id, title, sub) {
   S.pageStack.push({ id: currentPageId(), title: document.getElementById('topbarTitle').textContent, sub: document.getElementById('topbarSub').textContent });
   showPage(id, title, sub);
   document.getElementById('backBtn').style.display = 'flex';
-  // Show title text when navigated deeper
-  const titleWrap = document.getElementById('topbarTitleWrap');
-  const logo = document.getElementById('topbarLogo');
-  if (titleWrap) titleWrap.style.display = 'block';
-  if (logo) logo.style.display = 'none';
+  setTopbarMode(false);
   window.scrollTo(0, 0);
 }
 function handleBack() {
   if (!S.pageStack.length) return;
   const prev = S.pageStack.pop();
   showPage(prev.id, prev.title, prev.sub || null);
-  if (!S.pageStack.length) document.getElementById('backBtn').style.display = 'none';
+  if (!S.pageStack.length) {
+    document.getElementById('backBtn').style.display = 'none';
+    setTopbarMode(true);
+  }
   if (prev.id === 'orders')  updateHomePage();
   if (prev.id === 'order-list') renderOrderList();
   if (prev.id === 'reports') renderReportList();
@@ -344,6 +344,7 @@ function switchMainTab(tab) {
   document.getElementById('backBtn').style.display = 'none';
   document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
+  setTopbarMode(true);
   if (tab === 'orders')  { showPage('orders', '首页'); updateHomePage(); }
   if (tab === 'reports') { showPage('reports', '拣货报告'); renderReportList(); }
   if (tab === 'admin')    { showPage('admin', '管理'); renderAdminList(); updateAdminStockInfo(); }
@@ -636,6 +637,7 @@ async function handleFileUpload(input) {
     return;
   }
   document.getElementById('loading').style.display = 'none';
+  setTopbarMode(true);
   connectSSE();
 
   // ── Refresh when app comes back to foreground ──
