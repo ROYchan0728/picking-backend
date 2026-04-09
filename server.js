@@ -330,7 +330,12 @@ function parsePOText(text) {
     const m = text.match(pattern);
     return m ? m[1].trim() : '';
   };
-  const po        = get(/PURCHASE\s+ORDER\s+No\.\s*:\s*(PO-\d+)/i);
+
+  // Normalise: collapse all whitespace/newlines between words for key fields
+  // pdf-parse may split "PURCHASE  ORDER" and "No.   PO-100769" across lines
+  const flat = text.replace(/\r/g, '').replace(/\n+/g, ' ');
+
+  const po        = flat.match(/PURCHASE\s+ORDER[\s\S]*?No\.?\s*:?\s*(PO-\d+)/i)?.[1]?.trim() || '';
   const vessel    = get(/Vessel\s*Name\s*:\s*(.+)/i);
   const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
   const purchaser = get(/Purchaser\s*:\s*(.+)/i);
@@ -338,25 +343,31 @@ function parsePOText(text) {
   const gst       = get(/GST\s*\d+%\s*S\$\s*([\d,\.]+)/i);
   const total     = get(/Total\s*Amount\s*S\$\s*([\d,\.]+)/i);
 
-  // Vendor: the line IMMEDIATELY after 'PURCHASE ORDER No.' line
-  // That line looks like: "VENDOR NAME Your Ref No. :"
-  // Extract everything before "Your Ref No."
+  // Vendor: two possible formats from pdf-parse:
+  // Format A: "VENDOR NAME Your Ref No. :"  (vendor + label on same line)
+  // Format B: "Your Ref No."  then next line is vendor name
   let vendor = '';
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    if (/PURCHASE\s+ORDER\s+No\./i.test(lines[i])) {
+    const line = lines[i].trim();
+    if (/Your Ref No\.?/i.test(line)) {
+      // Format A: vendor before "Your Ref No." on same line
+      const v = line.replace(/\s*Your Ref No\..*$/i, '').trim();
+      if (v) { vendor = v; break; }
+      // Format B: "Your Ref No." alone — vendor is on the NEXT line
       const nextLine = (lines[i + 1] || '').trim();
-      // Remove trailing "Your Ref No. :" and anything after
-      vendor = nextLine.replace(/\s+Your Ref No\..*$/i, '').trim();
-      break;
+      if (nextLine && !/^(Date|Delivery|Vessel|Purchaser|Page|TEL|FAX|Attn)/i.test(nextLine)) {
+        vendor = nextLine;
+        break;
+      }
     }
   }
 
   return {
     po, vessel, vendor, delivery, purchaser,
-    subtotal: parseFloat(subtotal.replace(',','')) || 0,
-    gst:      parseFloat(gst.replace(',',''))      || 0,
-    total:    parseFloat(total.replace(',',''))     || 0,
+    subtotal: parseFloat((subtotal || '0').replace(',','')) || 0,
+    gst:      parseFloat((gst      || '0').replace(',','')) || 0,
+    total:    parseFloat((total     || '0').replace(',','')) || 0,
   };
 }
 
