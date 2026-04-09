@@ -336,9 +336,13 @@ function parsePOText(text) {
   const flat = text.replace(/\r/g, '').replace(/\n+/g, ' ');
 
   const po        = flat.match(/PURCHASE\s+ORDER[\s\S]*?No\.?\s*:?\s*(PO-\d+)/i)?.[1]?.trim() || '';
-  // Vessel: strip any trailing merged text like "JASONPurchaser:" or "Page :..."
+  // Vessel: pdf-parse often merges lines, e.g. "NEW LEADERPurchaser : JASON"
+  // Strategy: extract text between "Vessel Name :" and next known label
   const vesselRaw = get(/Vessel\s*Name\s*:\s*(.+)/i);
-  const vessel = vesselRaw.replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn)[\s\S]*$/i, '').trim();
+  const vessel = vesselRaw
+    .replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn|Item|S\/N)[\s\S]*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
   const purchaser = get(/Purchaser\s*:\s*(.+)/i);
   const subtotal  = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
