@@ -368,9 +368,14 @@ app.post('/api/vendor-pos/upload', upload.single('file'), async (req, res) => {
     const text   = parsed.text || '';
     const info   = parsePOText(text);
 
-    if (!info.po)     return res.status(400).json({ error: 'Cannot find PO number in PDF' });
-    if (!info.vessel) return res.status(400).json({ error: 'Cannot find Vessel Name in PDF' });
-    if (!info.vendor) return res.status(400).json({ error: 'Cannot find vendor name in PDF' });
+    // Return debug info if parsing fails so we can diagnose
+    if (!info.po) return res.status(400).json({
+      error: 'Cannot find PO number in PDF',
+      debug_first500: text.substring(0, 500),
+      debug_lines: text.split('\n').slice(0, 15)
+    });
+    if (!info.vessel) return res.status(400).json({ error: 'Cannot find Vessel Name in PDF', debug_first500: text.substring(0, 500) });
+    if (!info.vendor) return res.status(400).json({ error: 'Cannot find vendor name in PDF', debug_first500: text.substring(0, 500) });
 
     const pos = readPOs();
     const pdfBase64 = req.file.buffer.toString('base64');
