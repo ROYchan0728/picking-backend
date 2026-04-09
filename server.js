@@ -330,14 +330,28 @@ function parsePOText(text) {
     const m = text.match(pattern);
     return m ? m[1].trim() : '';
   };
-  const po         = get(/PURCHASE\s+ORDER\s+No\.\s*:\s*(PO-\d+)/i);
-  const vessel     = get(/Vessel\s*Name\s*:\s*(.+)/i);
-  const vendor     = get(/^(.+?)\s+Your Ref No\./m);
-  const delivery   = get(/Delivery\s*Date\s*:\s*(.+)/i);
-  const purchaser  = get(/Purchaser\s*:\s*(.+)/i);
-  const subtotal   = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
-  const gst        = get(/GST\s*\d+%\s*S\$\s*([\d,\.]+)/i);
-  const total      = get(/Total\s*Amount\s*S\$\s*([\d,\.]+)/i);
+  const po        = get(/PURCHASE\s+ORDER\s+No\.\s*:\s*(PO-\d+)/i);
+  const vessel    = get(/Vessel\s*Name\s*:\s*(.+)/i);
+  const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
+  const purchaser = get(/Purchaser\s*:\s*(.+)/i);
+  const subtotal  = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
+  const gst       = get(/GST\s*\d+%\s*S\$\s*([\d,\.]+)/i);
+  const total     = get(/Total\s*Amount\s*S\$\s*([\d,\.]+)/i);
+
+  // Vendor: the line IMMEDIATELY after 'PURCHASE ORDER No.' line
+  // That line looks like: "VENDOR NAME Your Ref No. :"
+  // Extract everything before "Your Ref No."
+  let vendor = '';
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (/PURCHASE\s+ORDER\s+No\./i.test(lines[i])) {
+      const nextLine = (lines[i + 1] || '').trim();
+      // Remove trailing "Your Ref No. :" and anything after
+      vendor = nextLine.replace(/\s+Your Ref No\..*$/i, '').trim();
+      break;
+    }
+  }
+
   return {
     po, vessel, vendor, delivery, purchaser,
     subtotal: parseFloat(subtotal.replace(',','')) || 0,
