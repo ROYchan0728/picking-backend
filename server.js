@@ -420,6 +420,18 @@ app.delete('/api/vendor-pos/:po', (req, res) => {
   res.json({ ok: true });
 });
 
+
+// DEBUG: returns raw pdf text (remove after fixing)
+app.post('/api/vendor-pos/debug-parse', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  try {
+    const parsed = await pdfParse(req.file.buffer);
+    const text = parsed.text || '';
+    res.json({ lines: text.split('
+'), full: text.substring(0, 2000) });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/vendor-pos/:po/pdf', (req, res) => {
   const pos = readPOs();
   const entry = pos.find(p => p.po === req.params.po);
