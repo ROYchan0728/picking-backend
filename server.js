@@ -420,11 +420,37 @@ app.post('/api/vendor-pos/upload', upload.single('file'), async (req, res) => {
       uploadedAt:  new Date().toLocaleString('zh-CN'),
       pdf:         pdfBase64
     };
+    const existingPOs   = pos.map(p => p.po);
+    const existingVessels = [...new Set(pos.map(p => p.vessel))];
+    const existingVendors = [...new Set(pos.map(p => p.vendor))];
+
+    const isNewPO     = !existingPOs.includes(entry.po);
+    const isNewVessel = !existingVessels.includes(entry.vessel);
+    const isNewVendor = !existingVendors.includes(entry.vendor);
+
     const idx = pos.findIndex(p => p.po === entry.po);
     if (idx >= 0) pos[idx] = entry; else pos.unshift(entry);
     writePOs(pos);
     broadcast('vendor_pos_updated', readPOs().map(p => ({ ...p, pdf: undefined })));
-    res.json({ ok: true, po: entry.po, vessel: entry.vessel, vendor: entry.vendor });
+
+    // Push notification for new vessel or new vendor
+    if (isNewPO) {
+      let title, body;
+      if (isNewVessel) {
+        title = `🚢 新船：${entry.vessel}`;
+        body  = `供货商 ${entry.vendor} · ${entry.po}`;
+      } else if (isNewVendor) {
+        title = `🏭 新供货商：${entry.vendor}`;
+        body  = `船名 ${entry.vessel} · ${entry.po}`;
+      } else {
+        title = `📄 新 PO：${entry.po}`;
+        body  = `${entry.vessel} · ${entry.vendor}`;
+      }
+      pushToAll({ title, body, type: 'vendor_po', po: entry.po, vessel: entry.vessel, vendor: entry.vendor });
+    }
+
+    res.json({ ok: true, po: entry.po, vessel: entry.vessel, vendor: entry.vendor,
+               isNewPO, isNewVessel, isNewVendor });
   } catch (err) {
     res.status(500).json({ error: 'PDF parse failed: ' + err.message });
   }
