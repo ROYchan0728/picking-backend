@@ -310,3 +310,57 @@ function checkStockReminder() {
 setInterval(checkStockReminder, 60 * 1000);
 
 app.listen(PORT, () => console.log('Backend running on port ' + PORT));
+
+// ─── VENDOR PO API ───────────────────────────────────────
+const PO_FILE = path.join(DATA_DIR, 'vendor_pos.json');
+
+function readPOs() {
+  if (!fs.existsSync(PO_FILE)) return [];
+  try { return JSON.parse(fs.readFileSync(PO_FILE, 'utf8')); }
+  catch { return []; }
+}
+function writePOs(pos) { fs.writeFileSync(PO_FILE, JSON.stringify(pos, null, 2)); }
+
+app.get('/api/vendor-pos', (req, res) => res.json(readPOs()));
+
+// Upload PDF — extract text via multipart, store metadata
+app.post('/api/vendor-pos/upload', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const { po, vessel, vendor, delivery, purchaser, items, subtotal, gst, total } = req.body;
+  if (!po || !vessel || !vendor) return res.status(400).json({ error: 'Missing fields' });
+
+  const pos = readPOs();
+  const pdfBase64 = req.file.buffer.toString('base64');
+  const entry = {
+    po, vessel: vessel.trim(), vendor: vendor.trim(),
+    delivery: delivery || '', purchaser: purchaser || '',
+    items: items ? JSON.parse(items) : [],
+    subtotal: parseFloat(subtotal) || 0,
+    gst: parseFloat(gst) || 0,
+    total: parseFloat(total) || 0,
+    uploadedAt: new Date().toLocaleString('zh-CN'),
+    pdf: pdfBase64
+  };
+  const idx = pos.findIndex(p => p.po === po);
+  if (idx >= 0) pos[idx] = entry; else pos.unshift(entry);
+  writePOs(pos);
+  broadcast('vendor_pos_updated', readPOs().map(p => ({ ...p, pdf: undefined })));
+  res.json({ ok: true, po: entry.po });
+});
+
+app.delete('/api/vendor-pos/:po', (req, res) => {
+  const pos = readPOs().filter(p => p.po !== req.params.po);
+  writePOs(pos);
+  broadcast('vendor_pos_updated', pos.map(p => ({ ...p, pdf: undefined })));
+  res.json({ ok: true });
+});
+
+app.get('/api/vendor-pos/:po/pdf', (req, res) => {
+  const pos = readPOs();
+  const entry = pos.find(p => p.po === req.params.po);
+  if (!entry || !entry.pdf) return res.status(404).json({ error: 'PDF not found' });
+  const buf = Buffer.from(entry.pdf, 'base64');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${entry.po}.pdf"`);
+  res.send(buf);
+});
