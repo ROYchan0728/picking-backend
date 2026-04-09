@@ -336,13 +336,24 @@ function parsePOText(text) {
   const flat = text.replace(/\r/g, '').replace(/\n+/g, ' ');
 
   const po        = flat.match(/PURCHASE\s+ORDER[\s\S]*?No\.?\s*:?\s*(PO-\d+)/i)?.[1]?.trim() || '';
-  // Vessel: pdf-parse often merges lines, e.g. "NEW LEADERPurchaser : JASON"
-  // Strategy: extract text between "Vessel Name :" and next known label
-  const vesselRaw = get(/Vessel\s*Name\s*:\s*(.+)/i);
-  const vessel = vesselRaw
-    .replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn|Item|S\/N)[\s\S]*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Vessel: pdf-parse places vessel name on the line AFTER "S/N"
+  // because the PDF layout puts vessel name in the left column near the item table header
+  let vessel = '';
+  const textLines = text.split('\n');
+  for (let i = 0; i < textLines.length - 1; i++) {
+    if (textLines[i].trim() === 'S/N') {
+      vessel = textLines[i + 1].trim();
+      break;
+    }
+  }
+  // Fallback: try Vessel Name label (may work if pdf-parse version differs)
+  if (!vessel) {
+    const vesselRaw = get(/Vessel\s*Name\s*:\s*(.+)/i);
+    vessel = vesselRaw
+      .replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn|Item|S\/N)[\s\S]*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
   const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
   const purchaser = get(/Purchaser\s*:\s*(.+)/i);
   const subtotal  = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
