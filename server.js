@@ -5,6 +5,7 @@ const path     = require('path');
 const multer   = require('multer');
 const XLSX     = require('xlsx');
 const webpush  = require('web-push');
+const pdfParse = require('pdf-parse');
 
 const app      = express();
 const PORT     = process.env.PORT || 3000;
@@ -324,28 +325,62 @@ function writePOs(pos) { fs.writeFileSync(PO_FILE, JSON.stringify(pos, null, 2))
 app.get('/api/vendor-pos', (req, res) => res.json(readPOs()));
 
 // Upload PDF — extract text via multipart, store metadata
+function parsePOText(text) {
+  const get = (pattern) => {
+    const m = text.match(pattern);
+    return m ? m[1].trim() : '';
+  };
+  const po         = get(/PURCHASE\s+ORDER\s+No\.\s*:\s*(PO-\d+)/i);
+  const vessel     = get(/Vessel\s*Name\s*:\s*(.+)/i);
+  const vendor     = get(/^(.+?)\s+Your Ref No\./m);
+  const delivery   = get(/Delivery\s*Date\s*:\s*(.+)/i);
+  const purchaser  = get(/Purchaser\s*:\s*(.+)/i);
+  const subtotal   = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
+  const gst        = get(/GST\s*\d+%\s*S\$\s*([\d,\.]+)/i);
+  const total      = get(/Total\s*Amount\s*S\$\s*([\d,\.]+)/i);
+  return {
+    po, vessel, vendor, delivery, purchaser,
+    subtotal: parseFloat(subtotal.replace(',','')) || 0,
+    gst:      parseFloat(gst.replace(',',''))      || 0,
+    total:    parseFloat(total.replace(',',''))     || 0,
+  };
+}
+
 app.post('/api/vendor-pos/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
-  const { po, vessel, vendor, delivery, purchaser, items, subtotal, gst, total } = req.body;
-  if (!po || !vessel || !vendor) return res.status(400).json({ error: 'Missing fields' });
+  try {
+    // Auto-parse PDF text
+    const parsed = await pdfParse(req.file.buffer);
+    const text   = parsed.text || '';
+    const info   = parsePOText(text);
 
-  const pos = readPOs();
-  const pdfBase64 = req.file.buffer.toString('base64');
-  const entry = {
-    po, vessel: vessel.trim(), vendor: vendor.trim(),
-    delivery: delivery || '', purchaser: purchaser || '',
-    items: items ? JSON.parse(items) : [],
-    subtotal: parseFloat(subtotal) || 0,
-    gst: parseFloat(gst) || 0,
-    total: parseFloat(total) || 0,
-    uploadedAt: new Date().toLocaleString('zh-CN'),
-    pdf: pdfBase64
-  };
-  const idx = pos.findIndex(p => p.po === po);
-  if (idx >= 0) pos[idx] = entry; else pos.unshift(entry);
-  writePOs(pos);
-  broadcast('vendor_pos_updated', readPOs().map(p => ({ ...p, pdf: undefined })));
-  res.json({ ok: true, po: entry.po });
+    if (!info.po)     return res.status(400).json({ error: 'Cannot find PO number in PDF' });
+    if (!info.vessel) return res.status(400).json({ error: 'Cannot find Vessel Name in PDF' });
+    if (!info.vendor) return res.status(400).json({ error: 'Cannot find vendor name in PDF' });
+
+    const pos = readPOs();
+    const pdfBase64 = req.file.buffer.toString('base64');
+    const entry = {
+      po:          info.po,
+      vessel:      info.vessel,
+      vendor:      info.vendor,
+      delivery:    info.delivery,
+      purchaser:   info.purchaser,
+      subtotal:    info.subtotal,
+      gst:         info.gst,
+      total:       info.total,
+      items:       [],
+      uploadedAt:  new Date().toLocaleString('zh-CN'),
+      pdf:         pdfBase64
+    };
+    const idx = pos.findIndex(p => p.po === entry.po);
+    if (idx >= 0) pos[idx] = entry; else pos.unshift(entry);
+    writePOs(pos);
+    broadcast('vendor_pos_updated', readPOs().map(p => ({ ...p, pdf: undefined })));
+    res.json({ ok: true, po: entry.po, vessel: entry.vessel, vendor: entry.vendor });
+  } catch (err) {
+    res.status(500).json({ error: 'PDF parse failed: ' + err.message });
+  }
 });
 
 app.delete('/api/vendor-pos/:po', (req, res) => {
