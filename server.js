@@ -336,7 +336,9 @@ function parsePOText(text) {
   const flat = text.replace(/\r/g, '').replace(/\n+/g, ' ');
 
   const po        = flat.match(/PURCHASE\s+ORDER[\s\S]*?No\.?\s*:?\s*(PO-\d+)/i)?.[1]?.trim() || '';
-  const vessel    = get(/Vessel\s*Name\s*:\s*(.+)/i);
+  // Vessel: strip any trailing merged text like "JASONPurchaser:" or "Page :..."
+  const vesselRaw = get(/Vessel\s*Name\s*:\s*(.+)/i);
+  const vessel = vesselRaw.replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn)[\s\S]*$/i, '').trim();
   const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
   const purchaser = get(/Purchaser\s*:\s*(.+)/i);
   const subtotal  = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
@@ -420,17 +422,6 @@ app.delete('/api/vendor-pos/:po', (req, res) => {
   res.json({ ok: true });
 });
 
-
-// DEBUG: returns raw pdf text (remove after fixing)
-app.post('/api/vendor-pos/debug-parse', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file' });
-  try {
-    const parsed = await pdfParse(req.file.buffer);
-    const text = parsed.text || '';
-    res.json({ lines: text.split('
-'), full: text.substring(0, 2000) });
-  } catch(err) { res.status(500).json({ error: err.message }); }
-});
 
 app.get('/api/vendor-pos/:po/pdf', (req, res) => {
   const pos = readPOs();
