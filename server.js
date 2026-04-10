@@ -376,8 +376,19 @@ function parsePOText(text) {
     }
   }
 
-  const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
-  const purchaser = get(/Purchaser\s*:\s*(.+)/i);
+  // Delivery date: pdf-parse puts date BEFORE the label: "11/04/2026Delivery Date:"
+  // Try both: date after label (standard) and date before label (pdf-parse reordered)
+  let delivery = get(/Delivery\s*Date\s*:\s*(\d[\d\/]+)/i);
+  if (!delivery) {
+    const dm = text.match(/(\d{2}\/\d{2}\/\d{4})\s*Delivery/i);
+    if (dm) delivery = dm[1];
+  }
+  // Purchaser: pdf-parse merges "JASONPurchaser :" — extract name before "Purchaser"
+  let purchaser = get(/Purchaser\s*:\s*([A-Z][A-Z ]+)/i);
+  if (!purchaser) {
+    const pm = text.match(/([A-Z][A-Z ]+)Purchaser/);
+    if (pm) purchaser = pm[1].trim();
+  }
   const subtotal  = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
   const gst       = get(/GST\s*\d+%\s*S\$\s*([\d,\.]+)/i);
   const total     = get(/Total\s*Amount\s*S\$\s*([\d,\.]+)/i);
