@@ -325,136 +325,147 @@ function writePOs(pos) { fs.writeFileSync(PO_FILE, JSON.stringify(pos, null, 2))
 app.get('/api/vendor-pos', (req, res) => res.json(readPOs()));
 
 // Upload PDF — extract text via multipart, store metadata
+function isCompanyName(str) {
+  return /\b(LTD|PTE|CO\.|SDN|CORP|INC|BHD|SHIPPING|MARINE|HARDWARE|SUPPLY|TRADING|ENTERPRISE|INDUSTRIES|SERVICES|GROUP|HARDWARE)\b/i.test(str);
+}
+
 function parsePOText(text) {
   const get = (pattern) => {
     const m = text.match(pattern);
     return m ? m[1].trim() : '';
   };
 
-  // Normalise: collapse all whitespace/newlines between words for key fields
-  // pdf-parse may split "PURCHASE  ORDER" and "No.   PO-100769" across lines
-  const flat = text.replace(/\r/g, '').replace(/\n+/g, ' ');
+  const flat  = text.replace(/\r/g, '').replace(/\n+/g, ' ');
+  const lines = text.split('\n');
 
-  const po        = flat.match(/PURCHASE\s+ORDER[\s\S]*?No\.?\s*:?\s*(PO-\d+)/i)?.[1]?.trim() || '';
-  // Vessel: pdf-parse places vessel name on the line AFTER "S/N"
-  // because the PDF layout puts vessel name in the left column near the item table header
+  // PO number
+  const po = flat.match(/PURCHASE\s+ORDER[\s\S]*?No\.?\s*:?\s*(PO-\d+)/i)?.[1]?.trim() || '';
+
+  // Vessel: line immediately after "S/N"
   let vessel = '';
-  const textLines = text.split('\n');
-  for (let i = 0; i < textLines.length - 1; i++) {
-    if (textLines[i].trim() === 'S/N') {
-      vessel = textLines[i + 1].trim();
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (lines[i].trim() === 'S/N') { vessel = lines[i + 1].trim(); break; }
+  }
+  if (!vessel) {
+    const raw = get(/Vessel\s*Name\s*:\s*(.+)/i);
+    vessel = raw.replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn|Item|S\/N)[\s\S]*$/i, '').replace(/\s+/g,' ').trim();
+  }
+
+  // Vendor: find "Your Ref No." line, extract company name from same line or nearby
+  let vendor = '';
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/Your Ref No\.?/i.test(line)) {
+      // Format A: "Your Ref No.VENDOR NAME" on same line
+      const inline = line.replace(/^.*Your Ref No\.?\s*/i, '').trim();
+      if (inline && isCompanyName(inline)) { vendor = inline; break; }
+      // Format B/C: scan next few lines for a company name
+      for (let j = i + 1; j <= i + 5 && j < lines.length; j++) {
+        const c = lines[j].trim();
+        if (c && isCompanyName(c)) { vendor = c; break; }
+      }
+      if (vendor) break;
+      // Last resort: first non-empty, non-address line after "Your Ref No."
+      for (let j = i + 1; j <= i + 3 && j < lines.length; j++) {
+        const c = lines[j].trim();
+        if (c && !/^[\d\s,]+$/.test(c) &&
+            !/^(SINGAPORE|Date|Delivery|Vessel|Purchaser|Page|TEL|FAX|Attn|\d)/i.test(c) &&
+            c.length > 3) { vendor = c; break; }
+      }
       break;
     }
   }
-  // Fallback: try Vessel Name label (may work if pdf-parse version differs)
-  if (!vessel) {
-    const vesselRaw = get(/Vessel\s*Name\s*:\s*(.+)/i);
-    vessel = vesselRaw
-      .replace(/\s*(Purchaser|Page|Date|TEL|FAX|Attn|Item|S\/N)[\s\S]*$/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
+
   const delivery  = get(/Delivery\s*Date\s*:\s*(.+)/i);
   const purchaser = get(/Purchaser\s*:\s*(.+)/i);
   const subtotal  = get(/Sub\s*Total\s+S\$\s*([\d,\.]+)/i);
   const gst       = get(/GST\s*\d+%\s*S\$\s*([\d,\.]+)/i);
   const total     = get(/Total\s*Amount\s*S\$\s*([\d,\.]+)/i);
 
-  // Vendor: two possible formats from pdf-parse:
-  // Format A: "VENDOR NAME Your Ref No. :"  (vendor + label on same line)
-  // Format B: "Your Ref No."  then next line is vendor name
-  let vendor = '';
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (/Your Ref No\.?/i.test(line)) {
-      // Format A: vendor before "Your Ref No." on same line
-      const v = line.replace(/\s*Your Ref No\..*$/i, '').trim();
-      if (v) { vendor = v; break; }
-      // Format B: "Your Ref No." alone — vendor is on the NEXT line
-      const nextLine = (lines[i + 1] || '').trim();
-      if (nextLine && !/^(Date|Delivery|Vessel|Purchaser|Page|TEL|FAX|Attn)/i.test(nextLine)) {
-        vendor = nextLine;
-        break;
-      }
-    }
-  }
-
   return {
     po, vessel, vendor, delivery, purchaser,
-    subtotal: parseFloat((subtotal || '0').replace(',','')) || 0,
-    gst:      parseFloat((gst      || '0').replace(',','')) || 0,
-    total:    parseFloat((total     || '0').replace(',','')) || 0,
+    subtotal: parseFloat((subtotal||'0').replace(',',''))||0,
+    gst:      parseFloat((gst     ||'0').replace(',',''))||0,
+    total:    parseFloat((total   ||'0').replace(',',''))||0,
   };
 }
 
 app.post('/api/vendor-pos/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   try {
-    // Auto-parse PDF text
-    const parsed = await pdfParse(req.file.buffer);
-    const text   = parsed.text || '';
-    const info   = parsePOText(text);
-
-    // Return debug info if parsing fails so we can diagnose
-    if (!info.po) return res.status(400).json({
-      error: 'Cannot find PO number in PDF',
-      debug_first500: text.substring(0, 500),
-      debug_lines: text.split('\n').slice(0, 15)
-    });
-    if (!info.vessel) return res.status(400).json({ error: 'Cannot find Vessel Name in PDF', debug_first500: text.substring(0, 500) });
-    if (!info.vendor) return res.status(400).json({ error: 'Cannot find vendor name in PDF', debug_first500: text.substring(0, 500) });
-
-    const pos = readPOs();
+    const pos       = readPOs();
+    const results   = [];
+    const errors    = [];
     const pdfBase64 = req.file.buffer.toString('base64');
-    const entry = {
-      po:          info.po,
-      vessel:      info.vessel,
-      vendor:      info.vendor,
-      delivery:    info.delivery,
-      purchaser:   info.purchaser,
-      subtotal:    info.subtotal,
-      gst:         info.gst,
-      total:       info.total,
-      items:       [],
-      uploadedAt:  new Date().toLocaleString('zh-CN'),
-      pdf:         pdfBase64
-    };
-    const existingPOs   = pos.map(p => p.po);
+
+    const parsed   = await pdfParse(req.file.buffer);
+    const fullText = parsed.text || '';
+    const allLines = fullText.split('\n');
+
+    // Split into per-PO blocks — each page starts with "Item" in pdf-parse output
+    const itemLineIndices = [];
+    allLines.forEach((line, i) => { if (line.trim() === 'Item') itemLineIndices.push(i); });
+    let blocks = itemLineIndices.length > 1
+      ? itemLineIndices.map((start, i) => {
+          const end = i + 1 < itemLineIndices.length ? itemLineIndices[i + 1] : allLines.length;
+          return allLines.slice(start, end).join('\n');
+        })
+      : [fullText];
+
+    if (!blocks.length) return res.status(400).json({ error: 'Cannot find any PO in PDF' });
+
+    const existingPOs     = pos.map(p => p.po);
     const existingVessels = [...new Set(pos.map(p => p.vessel))];
     const existingVendors = [...new Set(pos.map(p => p.vendor))];
+    const seenVessels = new Set();
+    const seenVendors = new Set();
 
-    const isNewPO     = !existingPOs.includes(entry.po);
-    const isNewVessel = !existingVessels.includes(entry.vessel);
-    const isNewVendor = !existingVendors.includes(entry.vendor);
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const info = parsePOText(blocks[bi]);
+      if (!info.po)     { errors.push({ block: bi + 1, error: 'Cannot find PO number' }); continue; }
+      if (!info.vessel) { errors.push({ block: bi + 1, po: info.po, error: 'Cannot find Vessel Name' }); continue; }
+      if (!info.vendor) { errors.push({ block: bi + 1, po: info.po, error: 'Cannot find vendor name' }); continue; }
 
-    const idx = pos.findIndex(p => p.po === entry.po);
-    if (idx >= 0) pos[idx] = entry; else pos.unshift(entry);
+      const entry = {
+        po: info.po, vessel: info.vessel, vendor: info.vendor,
+        delivery: info.delivery, purchaser: info.purchaser,
+        subtotal: info.subtotal, gst: info.gst, total: info.total,
+        items: [], uploadedAt: new Date().toLocaleString('zh-CN'),
+        pdf: pdfBase64, pageIndex: bi
+      };
+
+      const isNewPO     = !existingPOs.includes(entry.po);
+      const isNewVessel = !existingVessels.includes(entry.vessel) && !seenVessels.has(entry.vessel);
+      const isNewVendor = !existingVendors.includes(entry.vendor) && !seenVendors.has(entry.vendor);
+      seenVessels.add(entry.vessel);
+      seenVendors.add(entry.vendor);
+
+      const idx = pos.findIndex(p => p.po === entry.po);
+      if (idx >= 0) pos[idx] = entry; else pos.unshift(entry);
+      existingPOs.push(entry.po);
+      results.push({ po: entry.po, vessel: entry.vessel, vendor: entry.vendor, isNewPO, isNewVessel, isNewVendor });
+    }
+
     writePOs(pos);
     broadcast('vendor_pos_updated', readPOs().map(p => ({ ...p, pdf: undefined })));
 
-    // Push notification for new vessel or new vendor
-    if (isNewPO) {
+    if (results.length > 0) {
+      const newV = results.find(r => r.isNewVessel);
+      const newD = results.find(r => r.isNewVendor);
       let title, body;
-      if (isNewVessel) {
-        title = `🚢 新船：${entry.vessel}`;
-        body  = `供货商 ${entry.vendor} · ${entry.po}`;
-      } else if (isNewVendor) {
-        title = `🏭 新供货商：${entry.vendor}`;
-        body  = `船名 ${entry.vessel} · ${entry.po}`;
-      } else {
-        title = `📄 新 PO：${entry.po}`;
-        body  = `${entry.vessel} · ${entry.vendor}`;
-      }
-      pushToAll({ title, body, type: 'vendor_po', po: entry.po, vessel: entry.vessel, vendor: entry.vendor });
+      if (newV)              { title = `🚢 新船：${newV.vessel}`; body = `${results.length} 份供货商 PO 已上传`; }
+      else if (newD)         { title = `🏭 新供货商：${newD.vendor}`; body = `船名 ${newD.vessel}`; }
+      else if (results.length > 1) { title = `📄 ${results.length} 份新 PO`; body = results[0].vessel; }
+      else                   { title = `📄 新 PO：${results[0].po}`; body = `${results[0].vessel} · ${results[0].vendor}`; }
+      pushToAll({ title, body, type: 'vendor_po' });
     }
 
-    res.json({ ok: true, po: entry.po, vessel: entry.vessel, vendor: entry.vendor,
-               isNewPO, isNewVessel, isNewVendor });
+    res.json({ ok: true, count: results.length, results, errors });
   } catch (err) {
     res.status(500).json({ error: 'PDF parse failed: ' + err.message });
   }
 });
+
 
 app.delete('/api/vendor-pos/:po', (req, res) => {
   const pos = readPOs().filter(p => p.po !== req.params.po);
