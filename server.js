@@ -41,11 +41,19 @@ async function initDB() {
     category TEXT,
     qty NUMERIC DEFAULT 0,
     status TEXT DEFAULT 'active',
+    price_cost NUMERIC,
+    price_vendor NUMERIC,
+    price_sgd NUMERIC,
+    price_usd NUMERIC,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`);
-  // Add status column if upgrading from old schema
   await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'`).catch(()=>{});
+  await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS price_cost NUMERIC`).catch(()=>{});
+  await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS price_vendor NUMERIC`).catch(()=>{});
+  await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS price_sgd NUMERIC`).catch(()=>{});
+  await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS price_usd NUMERIC`).catch(()=>{});
+  await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS price_enabled BOOLEAN DEFAULT FALSE`).catch(()=>{});
   // Add unique constraint if upgrading from old schema
   await query(`
     DO $$ BEGIN
@@ -222,7 +230,7 @@ app.post('/api/reports', async (req, res) => {
 app.get('/api/stock', async (req, res) => {
   const [metaRes, itemsRes] = await Promise.all([
     query('SELECT filename, updated_at FROM stock_meta WHERE id=1'),
-    query('SELECT code, name, uom, item_group AS "group", category, qty, status FROM stock_items ORDER BY item_group, name')
+    query('SELECT code, name, uom, item_group AS "group", category, qty, status, price_cost, price_vendor, price_sgd, price_usd FROM stock_items ORDER BY item_group, name')
   ]);
   const meta = metaRes.rows[0] || {};
   res.json({
@@ -453,6 +461,112 @@ app.get('/api/vendor-pos/:po/pdf', async (req, res) => {
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition',`inline; filename="${req.params.po}.pdf"`);
   res.send(buf);
+});
+
+
+// ─── PRICING API ─────────────────────────────────────────
+
+// Update admin prices (cost + vendor + enabled flag) for a single item
+app.patch('/api/stock/items/:code/admin-price', async (req, res) => {
+  const { price_cost, price_vendor, price_enabled } = req.body;
+  const { code } = req.params;
+  const result = await query(
+    `UPDATE stock_items SET
+       price_cost    = COALESCE($1, price_cost),
+       price_vendor  = COALESCE($2, price_vendor),
+       price_enabled = COALESCE($3, price_enabled),
+       updated_at    = NOW()
+     WHERE code = $4`,
+    [price_cost ?? null, price_vendor ?? null, price_enabled ?? null, code]
+  );
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
+  res.json({ ok: true });
+});
+
+// Update boss prices (SGD + USD) for a single item
+app.patch('/api/stock/items/:code/boss-price', async (req, res) => {
+  const { price_sgd, price_usd } = req.body;
+  const { code } = req.params;
+  const result = await query(
+    `UPDATE stock_items SET
+       price_sgd  = COALESCE($1, price_sgd),
+       price_usd  = COALESCE($2, price_usd),
+       updated_at = NOW()
+     WHERE code = $3`,
+    [price_sgd ?? null, price_usd ?? null, code]
+  );
+  if (result.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
+  res.json({ ok: true });
+});
+
+// Bulk import prices from Excel (boss: SGD+USD, or admin: cost+vendor)
+app.post('/api/stock/import-prices', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const role = req.body.role || 'boss'; // 'boss' or 'admin'
+  try {
+    const wb   = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws   = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    if (rows.length < 2) return res.status(400).json({ error: 'No data rows' });
+
+    const header = rows[0].map(h => String(h || '').trim().toLowerCase());
+    const ci = name => header.findIndex(h => h.includes(name));
+    const cCode = ci('商品代码') >= 0 ? ci('商品代码') : ci('code');
+
+    let updated = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const row  = rows[i];
+      const code = cCode >= 0 && row[cCode] ? String(row[cCode]).trim() : null;
+      if (!code) continue;
+
+      if (role === 'boss') {
+        const cSGD = header.findIndex(h => h.includes('sgd'));
+        const cUSD = header.findIndex(h => h.includes('usd'));
+        const sgd  = cSGD >= 0 && row[cSGD] != null ? parseFloat(row[cSGD]) : null;
+        const usd  = cUSD >= 0 && row[cUSD] != null ? parseFloat(row[cUSD]) : null;
+        if (sgd == null && usd == null) continue;
+        const r = await query(
+          `UPDATE stock_items SET
+             price_sgd  = COALESCE($1, price_sgd),
+             price_usd  = COALESCE($2, price_usd),
+             updated_at = NOW()
+           WHERE code = $3`,
+          [sgd, usd, code]
+        );
+        if (r.rowCount > 0) updated++;
+      } else {
+        const cCost   = header.findIndex(h => h.includes('进货价') || h.includes('cost'));
+        const cVendor = header.findIndex(h => h.includes('供应商价') || h.includes('vendor'));
+        const cost    = cCost   >= 0 && row[cCost]   != null ? parseFloat(row[cCost])   : null;
+        const vendor  = cVendor >= 0 && row[cVendor] != null ? parseFloat(row[cVendor]) : null;
+        if (cost == null && vendor == null) continue;
+        const r = await query(
+          `UPDATE stock_items SET
+             price_cost   = COALESCE($1, price_cost),
+             price_vendor = COALESCE($2, price_vendor),
+             updated_at   = NOW()
+           WHERE code = $3`,
+          [cost, vendor, code]
+        );
+        if (r.rowCount > 0) updated++;
+      }
+    }
+    res.json({ ok: true, updated });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get all items with prices — ?enabled=true for boss view (only enabled items)
+app.get('/api/stock/prices', async (req, res) => {
+  const enabledOnly = req.query.enabled === 'true';
+  const { rows } = await query(
+    `SELECT code, name, uom, item_group AS "group", category,
+            price_cost, price_vendor, price_sgd, price_usd, price_enabled
+     FROM stock_items
+     WHERE status = 'active'
+     ${enabledOnly ? "AND price_enabled = TRUE" : ""}
+     ORDER BY item_group, name`
+  );
+  res.json(rows);
 });
 
 // ─── HEALTH ──────────────────────────────────────────────
