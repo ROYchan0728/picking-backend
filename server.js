@@ -40,9 +40,12 @@ async function initDB() {
     item_group TEXT,
     category TEXT,
     qty NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'active',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+  // Add status column if upgrading from old schema
+  await query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'`).catch(()=>{});
   // Add unique constraint if upgrading from old schema
   await query(`
     DO $$ BEGIN
@@ -219,7 +222,7 @@ app.post('/api/reports', async (req, res) => {
 app.get('/api/stock', async (req, res) => {
   const [metaRes, itemsRes] = await Promise.all([
     query('SELECT filename, updated_at FROM stock_meta WHERE id=1'),
-    query('SELECT code, name, uom, item_group AS "group", category, qty FROM stock_items ORDER BY item_group, name')
+    query('SELECT code, name, uom, item_group AS "group", category, qty, status FROM stock_items ORDER BY item_group, name')
   ]);
   const meta = metaRes.rows[0] || {};
   res.json({
@@ -262,33 +265,34 @@ app.post('/api/stock/upload', upload.single('file'), async (req, res) => {
     }
     if (!items.length) return res.status(400).json({ error:'No valid stock rows' });
 
-    // Full sync: upsert items in Excel, delete items not in Excel
+    // Sync: upsert items in Excel (mark active), mark missing items as 'outdated'
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // 1. Upsert all items from Excel
+      // 1. Upsert all items from Excel — mark as active
       const codes = items.map(i => i.code);
       for (const item of items) {
         await client.query(
-          `INSERT INTO stock_items(code, name, uom, item_group, category, qty)
-           VALUES($1, $2, $3, $4, $5, $6)
+          `INSERT INTO stock_items(code, name, uom, item_group, category, qty, status)
+           VALUES($1, $2, $3, $4, $5, $6, 'active')
            ON CONFLICT(code) DO UPDATE SET
              name       = EXCLUDED.name,
              uom        = EXCLUDED.uom,
              item_group = EXCLUDED.item_group,
              category   = EXCLUDED.category,
              qty        = EXCLUDED.qty,
+             status     = 'active',
              updated_at = NOW()`,
           [item.code, item.name, item.uom, item.group, item.category, item.qty]
         );
       }
 
-      // 2. Delete items that are no longer in Excel
-      const deleted = await client.query(
-        `DELETE FROM stock_items WHERE code != '' AND code NOT IN (
-           SELECT unnest($1::text[])
-         )`,
+      // 2. Mark items not in Excel as 'outdated' (keep the row, just flag it)
+      const marked = await client.query(
+        `UPDATE stock_items SET status = 'outdated', updated_at = NOW()
+         WHERE code != '' AND code NOT IN (SELECT unnest($1::text[]))
+         AND status != 'outdated'`,
         [codes]
       );
 
@@ -297,7 +301,7 @@ app.post('/api/stock/upload', upload.single('file'), async (req, res) => {
         [req.file.originalname]
       );
       await client.query('COMMIT');
-      console.log(`Stock sync: ${items.length} upserted, ${deleted.rowCount} deleted`);
+      console.log(`Stock sync: ${items.length} upserted, ${marked.rowCount} marked outdated`);
     } catch(err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
 
