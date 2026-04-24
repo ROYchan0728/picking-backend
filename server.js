@@ -66,6 +66,18 @@ async function initDB() {
   `).catch(() => {});
   await query(`CREATE INDEX IF NOT EXISTS idx_stock_items_group ON stock_items(item_group)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_stock_items_code  ON stock_items(code)`);
+  await query(`CREATE TABLE IF NOT EXISTS items (
+    item_id     INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    unit        TEXT,
+    section_id  INTEGER,
+    subsection_id INTEGER,
+    category_id INTEGER,
+    image_id    INTEGER
+  )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_items_name ON items USING gin(to_tsvector('english', name))`).catch(()=>{});
+  await query(`CREATE INDEX IF NOT EXISTS idx_items_section ON items(section_id)`).catch(()=>{});
   await query(`CREATE TABLE IF NOT EXISTS vendor_pos (
     po TEXT PRIMARY KEY, vessel TEXT NOT NULL, vendor TEXT NOT NULL, data JSONB NOT NULL, uploaded_at TIMESTAMPTZ DEFAULT NOW())`);
   await query(`CREATE TABLE IF NOT EXISTS subscriptions (
@@ -567,6 +579,75 @@ app.get('/api/stock/prices', async (req, res) => {
      ORDER BY item_group, name`
   );
   res.json(rows);
+});
+
+
+// ─── ITEMS CATALOG ───────────────────────────────────────
+
+// Search items by name or ID
+app.get('/api/items/search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+  const isId = /^\d+$/.test(q);
+  let rows;
+  if (isId) {
+    const r = await query('SELECT * FROM items WHERE item_id = $1 LIMIT 1', [parseInt(q)]);
+    rows = r.rows;
+  } else {
+    const r = await query(
+      `SELECT * FROM items WHERE name ILIKE $1 ORDER BY item_id LIMIT 30`,
+      ['%' + q + '%']
+    );
+    rows = r.rows;
+  }
+  res.json(rows);
+});
+
+// Get single item by ID
+app.get('/api/items/:id', async (req, res) => {
+  const { rows } = await query('SELECT * FROM items WHERE item_id = $1', [parseInt(req.params.id)]);
+  if (!rows.length) return res.status(404).json({ error: 'Item not found' });
+  res.json(rows[0]);
+});
+
+// Bulk import items from JSON (one-time setup)
+app.post('/api/items/import', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  try {
+    const items = JSON.parse(req.file.buffer.toString('utf-8'));
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'Expected JSON array' });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      let inserted = 0, updated = 0;
+      for (const item of items) {
+        const r = await client.query(
+          `INSERT INTO items(item_id, name, description, unit, section_id, subsection_id, category_id, image_id)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT(item_id) DO UPDATE SET
+             name=EXCLUDED.name, description=EXCLUDED.description,
+             unit=EXCLUDED.unit, section_id=EXCLUDED.section_id,
+             subsection_id=EXCLUDED.subsection_id, category_id=EXCLUDED.category_id,
+             image_id=EXCLUDED.image_id`,
+          [
+            item.ItemID,
+            item.Name || '',
+            (item.Description && item.Description !== '-') ? item.Description : null,
+            item.Unit || null,
+            item.SectionID || null,
+            item.SubSectionID || null,
+            item.CategoryID || null,
+            item.ImageID || null
+          ]
+        );
+        if (r.rowCount > 0) inserted++;
+      }
+      await client.query('COMMIT');
+      res.json({ ok: true, count: inserted });
+    } catch(err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+  } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── HEALTH ──────────────────────────────────────────────
