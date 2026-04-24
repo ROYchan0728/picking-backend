@@ -34,14 +34,25 @@ async function initDB() {
   )`);
   await query(`CREATE TABLE IF NOT EXISTS stock_items (
     id SERIAL PRIMARY KEY,
-    code TEXT,
+    code TEXT UNIQUE,
     name TEXT NOT NULL,
     uom TEXT,
     item_group TEXT,
     category TEXT,
     qty NUMERIC DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+  // Add unique constraint if upgrading from old schema
+  await query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'stock_items_code_key'
+      ) THEN
+        ALTER TABLE stock_items ADD CONSTRAINT stock_items_code_key UNIQUE (code);
+      END IF;
+    END $$
+  `).catch(() => {});
   await query(`CREATE INDEX IF NOT EXISTS idx_stock_items_group ON stock_items(item_group)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_stock_items_code  ON stock_items(code)`);
   await query(`CREATE TABLE IF NOT EXISTS vendor_pos (
@@ -251,22 +262,42 @@ app.post('/api/stock/upload', upload.single('file'), async (req, res) => {
     }
     if (!items.length) return res.status(400).json({ error:'No valid stock rows' });
 
-    // Replace all items in a transaction
+    // Full sync: upsert items in Excel, delete items not in Excel
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('DELETE FROM stock_items');
+
+      // 1. Upsert all items from Excel
+      const codes = items.map(i => i.code);
       for (const item of items) {
         await client.query(
-          'INSERT INTO stock_items(code,name,uom,item_group,category,qty) VALUES($1,$2,$3,$4,$5,$6)',
+          `INSERT INTO stock_items(code, name, uom, item_group, category, qty)
+           VALUES($1, $2, $3, $4, $5, $6)
+           ON CONFLICT(code) DO UPDATE SET
+             name       = EXCLUDED.name,
+             uom        = EXCLUDED.uom,
+             item_group = EXCLUDED.item_group,
+             category   = EXCLUDED.category,
+             qty        = EXCLUDED.qty,
+             updated_at = NOW()`,
           [item.code, item.name, item.uom, item.group, item.category, item.qty]
         );
       }
+
+      // 2. Delete items that are no longer in Excel
+      const deleted = await client.query(
+        `DELETE FROM stock_items WHERE code != '' AND code NOT IN (
+           SELECT unnest($1::text[])
+         )`,
+        [codes]
+      );
+
       await client.query(
         'INSERT INTO stock_meta(id,filename,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET filename=$1, updated_at=NOW()',
         [req.file.originalname]
       );
       await client.query('COMMIT');
+      console.log(`Stock sync: ${items.length} upserted, ${deleted.rowCount} deleted`);
     } catch(err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
 
