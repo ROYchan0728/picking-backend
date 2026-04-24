@@ -11,9 +11,9 @@ const PORT = process.env.PORT || 3000;
 
 // ─── DATABASE ────────────────────────────────────────────
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ||
-    'postgresql://postgres:jiongcjr07281024@db.fjwrtdehvbyrnieokeek.supabase.co:5432/postgres',
-  ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('supabase')
+    ? { rejectUnauthorized: false } : false
 });
 
 async function query(sql, params = []) {
