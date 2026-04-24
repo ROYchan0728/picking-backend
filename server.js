@@ -27,8 +27,23 @@ async function initDB() {
     id TEXT PRIMARY KEY, data JSONB NOT NULL, loaded_at TIMESTAMPTZ DEFAULT NOW())`);
   await query(`CREATE TABLE IF NOT EXISTS reports (
     id SERIAL PRIMARY KEY, order_id TEXT NOT NULL, data JSONB NOT NULL, finished_at TIMESTAMPTZ DEFAULT NOW())`);
-  await query(`CREATE TABLE IF NOT EXISTS stock (
-    id INTEGER PRIMARY KEY DEFAULT 1, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await query(`CREATE TABLE IF NOT EXISTS stock_meta (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    filename TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS stock_items (
+    id SERIAL PRIMARY KEY,
+    code TEXT,
+    name TEXT NOT NULL,
+    uom TEXT,
+    item_group TEXT,
+    category TEXT,
+    qty NUMERIC DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_stock_items_group ON stock_items(item_group)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_stock_items_code  ON stock_items(code)`);
   await query(`CREATE TABLE IF NOT EXISTS vendor_pos (
     po TEXT PRIMARY KEY, vessel TEXT NOT NULL, vendor TEXT NOT NULL, data JSONB NOT NULL, uploaded_at TIMESTAMPTZ DEFAULT NOW())`);
   await query(`CREATE TABLE IF NOT EXISTS subscriptions (
@@ -191,8 +206,16 @@ app.post('/api/reports', async (req, res) => {
 
 // ─── STOCK ───────────────────────────────────────────────
 app.get('/api/stock', async (req, res) => {
-  const { rows } = await query('SELECT data FROM stock WHERE id=1');
-  res.json(rows.length ? rows[0].data : { items:[], updatedAt:null });
+  const [metaRes, itemsRes] = await Promise.all([
+    query('SELECT filename, updated_at FROM stock_meta WHERE id=1'),
+    query('SELECT code, name, uom, item_group AS "group", category, qty FROM stock_items ORDER BY item_group, name')
+  ]);
+  const meta = metaRes.rows[0] || {};
+  res.json({
+    items: itemsRes.rows.map(r => ({ ...r, qty: parseFloat(r.qty) })),
+    updatedAt: meta.updated_at ? new Date(meta.updated_at).toLocaleString('zh-CN') : null,
+    filename:  meta.filename || null
+  });
 });
 
 app.post('/api/stock/upload', upload.single('file'), async (req, res) => {
@@ -201,26 +224,57 @@ app.post('/api/stock/upload', upload.single('file'), async (req, res) => {
     const wb=XLSX.read(req.file.buffer,{type:'buffer'}), ws=wb.Sheets[wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{header:1});
     if (rows.length<2) return res.status(400).json({ error:'No data rows' });
+
     const header=rows[0].map(h=>String(h||'').trim());
     const ci=name=>header.findIndex(h=>h.includes(name));
-    const cCode=ci('商品代码'),cUom=ci('基本UOM'),cName=ci('名称'),cGroup=ci('商品组别'),cCat=ci('商品类别'),cCtrl=ci('库存控制'),cActive=ci('活跃'),cQty=ci('剩余总量');
+    const cCode=ci('商品代码'),cUom=ci('基本UOM'),cName=ci('名称');
+    const cGroup=ci('商品组别'),cCat=ci('商品类别');
+    const cCtrl=ci('库存控制'),cActive=ci('活跃'),cQty=ci('剩余总量');
+
     const items=[];
     for (let i=1;i<rows.length;i++) {
       const row=rows[i];
-      const ctrl=cCtrl>=0?String(row[cCtrl]||'').trim():'', active=cActive>=0?String(row[cActive]||'').trim():'';
+      const ctrl  =cCtrl  >=0?String(row[cCtrl]  ||'').trim():'';
+      const active=cActive>=0?String(row[cActive]||'').trim():'';
       if (ctrl==='Unchecked'||active==='Unchecked') continue;
       const name=cName>=0?String(row[cName]||'').trim():'';
       if (!name) continue;
       let qty=0; try{qty=cQty>=0&&row[cQty]!=null?parseFloat(row[cQty]):0;}catch{}
-      items.push({ code:cCode>=0&&row[cCode]?String(row[cCode]).trim():'', uom:cUom>=0&&row[cUom]?String(row[cUom]).trim():'',
-        name, group:cGroup>=0&&row[cGroup]?String(row[cGroup]).trim():'其他组别',
-        category:cCat>=0&&row[cCat]?String(row[cCat]).trim():'其他类别', qty });
+      items.push({
+        code:    cCode >=0&&row[cCode] ?String(row[cCode]).trim() :'',
+        uom:     cUom  >=0&&row[cUom]  ?String(row[cUom]).trim()  :'',
+        name,
+        group:   cGroup>=0&&row[cGroup]?String(row[cGroup]).trim():'其他组别',
+        category:cCat  >=0&&row[cCat]  ?String(row[cCat]).trim()  :'其他类别',
+        qty
+      });
     }
     if (!items.length) return res.status(400).json({ error:'No valid stock rows' });
-    const stock={ items, updatedAt:new Date().toLocaleString('zh-CN'), filename:req.file.originalname };
-    await query('INSERT INTO stock(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1, updated_at=NOW()', [JSON.stringify(stock)]);
+
+    // Replace all items in a transaction
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM stock_items');
+      for (const item of items) {
+        await client.query(
+          'INSERT INTO stock_items(code,name,uom,item_group,category,qty) VALUES($1,$2,$3,$4,$5,$6)',
+          [item.code, item.name, item.uom, item.group, item.category, item.qty]
+        );
+      }
+      await client.query(
+        'INSERT INTO stock_meta(id,filename,updated_at) VALUES(1,$1,NOW()) ON CONFLICT(id) DO UPDATE SET filename=$1, updated_at=NOW()',
+        [req.file.originalname]
+      );
+      await client.query('COMMIT');
+    } catch(err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+
+    // Build response for SSE broadcast (same shape as before)
+    const updatedAt = new Date().toLocaleString('zh-CN');
+    const stock = { items, updatedAt, filename: req.file.originalname };
     broadcast('stock_updated', stock);
-    res.json({ ok:true, count:items.length, updatedAt:stock.updatedAt });
+    res.json({ ok:true, count:items.length, updatedAt });
   } catch(err) { res.status(500).json({ error:err.message }); }
 });
 
