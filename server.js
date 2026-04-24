@@ -610,41 +610,47 @@ app.get('/api/items/:id', async (req, res) => {
   res.json(rows[0]);
 });
 
-// Bulk import items from JSON (one-time setup)
+// Bulk import items from JSON (one-time setup) — uses unnest for fast batch insert
 app.post('/api/items/import', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   try {
     const items = JSON.parse(req.file.buffer.toString('utf-8'));
     if (!Array.isArray(items)) return res.status(400).json({ error: 'Expected JSON array' });
 
+    const BATCH = 1000;
+    let total = 0;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      let inserted = 0, updated = 0;
-      for (const item of items) {
-        const r = await client.query(
+      // Process in batches of 1000
+      for (let i = 0; i < items.length; i += BATCH) {
+        const chunk = items.slice(i, i + BATCH);
+        const ids   = chunk.map(x => x.ItemID);
+        const names = chunk.map(x => x.Name || '');
+        const descs = chunk.map(x => (x.Description && x.Description !== '-') ? x.Description : null);
+        const units = chunk.map(x => x.Unit || null);
+        const secs  = chunk.map(x => x.SectionID || null);
+        const subs  = chunk.map(x => x.SubSectionID || null);
+        const cats  = chunk.map(x => x.CategoryID || null);
+        const imgs  = chunk.map(x => x.ImageID || null);
+
+        await client.query(
           `INSERT INTO items(item_id, name, description, unit, section_id, subsection_id, category_id, image_id)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+           SELECT * FROM unnest(
+             $1::int[], $2::text[], $3::text[], $4::text[],
+             $5::int[],  $6::int[],  $7::int[],  $8::int[]
+           )
            ON CONFLICT(item_id) DO UPDATE SET
              name=EXCLUDED.name, description=EXCLUDED.description,
              unit=EXCLUDED.unit, section_id=EXCLUDED.section_id,
              subsection_id=EXCLUDED.subsection_id, category_id=EXCLUDED.category_id,
              image_id=EXCLUDED.image_id`,
-          [
-            item.ItemID,
-            item.Name || '',
-            (item.Description && item.Description !== '-') ? item.Description : null,
-            item.Unit || null,
-            item.SectionID || null,
-            item.SubSectionID || null,
-            item.CategoryID || null,
-            item.ImageID || null
-          ]
+          [ids, names, descs, units, secs, subs, cats, imgs]
         );
-        if (r.rowCount > 0) inserted++;
+        total += chunk.length;
       }
       await client.query('COMMIT');
-      res.json({ ok: true, count: inserted });
+      res.json({ ok: true, count: total });
     } catch(err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
   } catch(err) { res.status(500).json({ error: err.message }); }
